@@ -33,7 +33,7 @@ n=int(0.9*len(data))
 train_data = data[:n]
 val_data = data[n:]
 
-block_size = 8
+block_size = 32
 batch_size = 4
 n_embd = 32
 
