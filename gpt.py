@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
+device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+
 torch.manual_seed(1337)
 
 # ---- Phase 1: data loading & tokenization ----
@@ -33,9 +35,11 @@ n=int(0.9*len(data))
 train_data = data[:n]
 val_data = data[n:]
 
-block_size = 32
-batch_size = 4
-n_embd = 32
+block_size = 64
+batch_size = 64
+n_embd = 128
+n_head = 4
+n_layer = 4
 eval_iters = 200
 dropout = 0.2
 
@@ -44,6 +48,7 @@ def get_batch(split):
     ix = torch.randint(len(data) - block_size, (batch_size,))
     x = torch.stack([data[i:i+block_size] for i in ix])
     y = torch.stack([data[i+1:i+block_size+1] for i in ix])
+    x, y = x.to(device), y.to(device)
     return x, y
 xb, yb = get_batch('train')
 print('inputs:')
@@ -144,12 +149,7 @@ class BigramLanguageModel(nn.Module):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.position_embedding_table = nn.Embedding(block_size, n_embd)
-        self.blocks = nn.Sequential(
-            Block(n_embd, n_head=4),
-            Block(n_embd, n_head=4),
-            Block(n_embd, n_head=4),
-            Block(n_embd, n_head=4),
-        )
+        self.blocks = nn.Sequential(*[Block(n_embd, n_head=n_head) for _ in range(n_layer)])
         self.ln_f = nn.LayerNorm(n_embd)
         self.lm_head = nn.Linear(n_embd, vocab_size)
 
@@ -157,7 +157,7 @@ class BigramLanguageModel(nn.Module):
         B, T = idx.shape
 
         tok_emb = self.token_embedding_table(idx)
-        pos_emb = self.position_embedding_table(torch.arange(T))
+        pos_emb = self.position_embedding_table(torch.arange(T, device=device))
         x = tok_emb + pos_emb
         x = self.blocks(x)
         x = self.ln_f(x)
@@ -184,17 +184,18 @@ class BigramLanguageModel(nn.Module):
         return idx
     
 model = BigramLanguageModel(vocab_size)
+model = model.to(device)
 logits, loss = model(xb, yb)
 print(logits.shape)
 print(loss)
-idx = torch.zeros((1,1), dtype=torch.long)
+idx = torch.zeros((1,1), dtype=torch.long, device=device)
 print(decode(model.generate(idx, max_new_tokens=500)[0].tolist()))
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
 
-batch_size = 32
-max_iters = 10000
-eval_interval = 1000
+batch_size = 64
+max_iters = 5000
+eval_interval = 500
 
 for iter in range(max_iters):
 
@@ -211,7 +212,8 @@ for iter in range(max_iters):
 
 print(loss.item())
 
-idx = torch.zeros((1,1), dtype=torch.long)
+print(">>> REACHED FINAL GENERATION STEP <<<")
+idx = torch.zeros((1,1), dtype=torch.long, device=device)
 print(decode(model.generate(idx, max_new_tokens=100)[0].tolist()))
 
 # ---- Phase 3: attention ----
