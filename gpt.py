@@ -36,6 +36,7 @@ val_data = data[n:]
 block_size = 32
 batch_size = 4
 n_embd = 32
+eval_iters = 200
 
 def get_batch(split):
     data = train_data if split == 'train' else val_data
@@ -50,6 +51,22 @@ print(xb)
 print('targets:')
 print(yb.shape)
 print(yb)
+
+# Estimate loss function (added later on)
+
+@torch.no_grad()
+def estimate_loss():
+    out = {}
+    model.eval()
+    for split in ['train', 'val']:
+        losses = torch.zeros(eval_iters)
+        for k in range(eval_iters):
+            X, Y = get_batch(split)
+            logits, loss = model(X, Y)
+            losses[k] = loss.item()
+        out[split] = losses.mean()
+    model.train()
+    return out
 
 # ---- Phase 2: bigram model (updated in phase 3) ----
 # More generally, I have decided to keep class definitions here.
@@ -160,14 +177,14 @@ class BigramLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1)
         return idx
     
-m = BigramLanguageModel(vocab_size)
-logits, loss = m(xb, yb)
+model = BigramLanguageModel(vocab_size)
+logits, loss = model(xb, yb)
 print(logits.shape)
 print(loss)
 idx = torch.zeros((1,1), dtype=torch.long)
-print(decode(m.generate(idx, max_new_tokens=500)[0].tolist()))
+print(decode(model.generate(idx, max_new_tokens=500)[0].tolist()))
 
-optimizer = torch.optim.AdamW(m.parameters(), lr=1e-3)
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
 
 batch_size = 32
 max_iters = 10000
@@ -176,11 +193,12 @@ eval_interval = 1000
 for iter in range(max_iters):
 
     if iter % eval_interval == 0:
-        print(f"step {iter}: loss {loss.item():.4f}")
+        losses = estimate_loss()
+        print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
 
     xb, yb = get_batch('train')
 
-    logits, loss = m(xb, yb)
+    logits, loss = model(xb, yb)
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
     optimizer.step()
@@ -188,7 +206,7 @@ for iter in range(max_iters):
 print(loss.item())
 
 idx = torch.zeros((1,1), dtype=torch.long)
-print(decode(m.generate(idx, max_new_tokens=100)[0].tolist()))
+print(decode(model.generate(idx, max_new_tokens=100)[0].tolist()))
 
 # ---- Phase 3: attention ----
 
