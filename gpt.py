@@ -52,6 +52,7 @@ print(yb.shape)
 print(yb)
 
 # ---- Phase 2: bigram model (updated in phase 3) ----
+# More generally, I have decided to keep class definitions here.
 
 # Now to create/define the 'Head' class (actually part of phase 3):
 
@@ -99,14 +100,28 @@ class FeedForward(nn.Module):
     def forward(self, x):
         return self.net(x)
 
+class Block(nn.Module):
+    """ Transformer block: communication followed by computation """
+    def __init__(self, n_embd, n_head):
+        super().__init__()
+        head_size = n_embd // n_head
+        self.sa = MultiHeadAttention(n_head, head_size)
+        self.ffwd = FeedForward(n_embd)
+        self.ln1 = nn.LayerNorm(n_embd)
+        self.ln2 = nn.LayerNorm(n_embd)
+
+    def forward(self, x):
+        x = x + self.sa(self.ln1(x))
+        x = x + self.ffwd(self.ln2(x))
+        return x
+
 class BigramLanguageModel(nn.Module):
 
     def __init__(self, vocab_size):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.position_embedding_table = nn.Embedding(block_size, n_embd)
-        self.sa_heads = MultiHeadAttention(4, n_embd//4)
-        self.ffwd = FeedForward(n_embd)
+        self.block = Block(n_embd, n_head=4)
         self.lm_head = nn.Linear(n_embd, vocab_size)
 
     def forward(self, idx, targets=None):
@@ -115,8 +130,7 @@ class BigramLanguageModel(nn.Module):
         tok_emb = self.token_embedding_table(idx)
         pos_emb = self.position_embedding_table(torch.arange(T))
         x = tok_emb + pos_emb
-        x = self.sa_heads(x)
-        x = self.ffwd(x)
+        x = self.block(x)
         logits = self.lm_head(x)
 
         if targets is None:
