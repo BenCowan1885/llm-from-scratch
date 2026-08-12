@@ -37,6 +37,7 @@ block_size = 32
 batch_size = 4
 n_embd = 32
 eval_iters = 200
+dropout = 0.2
 
 def get_batch(split):
     data = train_data if split == 'train' else val_data
@@ -82,6 +83,7 @@ class Head(nn.Module):
         self.query = nn.Linear(n_embd, head_size, bias = False)
         self.value = nn.Linear(n_embd, head_size, bias = False)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         B, T, C = x.shape
@@ -90,6 +92,7 @@ class Head(nn.Module):
         wei = q @ k.transpose(-2, -1) * C**-0.5
         wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
         wei = F.softmax(wei, dim=-1)
+        wei = self.dropout(wei)
         v = self.value(x)
         out = wei @ v
         return out
@@ -100,9 +103,11 @@ class MultiHeadAttention(nn.Module):
     def __init__(self,num_heads, head_size):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        return torch.cat([h(x) for h in self.heads], dim=-1)
+        out = torch.cat([h(x) for h in self.heads], dim=-1)
+        return self.dropout(out)
 
 class FeedForward(nn.Module):
     """ a simple linear layer followed by a non-linearity """
@@ -112,6 +117,7 @@ class FeedForward(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(n_embd, n_embd),
             nn.ReLU(),
+            nn.Dropout(dropout),
         )
 
     def forward(self, x):
