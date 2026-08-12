@@ -26,7 +26,6 @@ decode = lambda l: ''.join([itos[i] for i in l])
 print(encode("hii there"))
 print(decode(encode("hii there")))
 
-import torch
 data = torch.tensor(encode(text), dtype=torch.long)
 print(data.shape, data.dtype)
 print(data[:200])
@@ -35,12 +34,15 @@ n=int(0.9*len(data))
 train_data = data[:n]
 val_data = data[n:]
 
+# ---- Hyperparameters ----
 block_size = 64
 batch_size = 64
 n_embd = 128
 n_head = 4
 n_layer = 4
 eval_iters = 200
+max_iters = 5000
+eval_interval = 500
 dropout = 0.2
 
 def get_batch(split):
@@ -188,14 +190,8 @@ model = model.to(device)
 logits, loss = model(xb, yb)
 print(logits.shape)
 print(loss)
-idx = torch.zeros((1,1), dtype=torch.long, device=device)
-print(decode(model.generate(idx, max_new_tokens=500)[0].tolist()))
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
-
-batch_size = 64
-max_iters = 5000
-eval_interval = 500
 
 for iter in range(max_iters):
 
@@ -215,49 +211,3 @@ print(loss.item())
 print(">>> REACHED FINAL GENERATION STEP <<<")
 idx = torch.zeros((1,1), dtype=torch.long, device=device)
 print(decode(model.generate(idx, max_new_tokens=100)[0].tolist()))
-
-# ---- Phase 3: attention ----
-
-# NOTE: this section uses toy/dummy data (not the real dataset)
-# purely to demonstrate the averaging mechanism before building real attention
-
-torch.manual_seed(1337)
-B, T, C = 4, 8, 2
-x = torch.randn(B, T, C)
-print(x.shape)
-
-xbow = torch.zeros((B, T, C))
-for b in range(B):
-    for t in range (T):
-        xprev = x[b, :t+1]
-        xbow[b, t] = torch.mean(xprev, 0)
-print(xbow[0])
-
-wei = torch.tril(torch.ones(T, T))
-wei = wei / wei.sum(1, keepdim=True)
-xbow2 = wei @ x
-print(torch.allclose(xbow, xbow2, atol=1e-6))
-
-# Now to create real self-attention head:
-
-torch.manual_seed(1337)
-B, T, C = 4, 8, 32
-x = torch.randn(B, T, C)
-
-head_size = 16
-key = nn.Linear(C, head_size, bias = False)
-query = nn.Linear(C, head_size, bias = False)
-value = nn.Linear(C, head_size, bias = False)
-k = key(x)
-q = query(x)
-wei = q @ k.transpose(-2, -1)
-
-tril = torch.tril(torch.ones(T, T))
-wei = wei.masked_fill(tril == 0, float('-inf'))
-wei = F.softmax(wei, dim=-1)
-
-v = value(x)
-out = wei @ v
-print(out.shape)
-print(wei[0])
-
